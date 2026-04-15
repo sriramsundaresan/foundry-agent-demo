@@ -1,0 +1,84 @@
+# Deploy Prompt Agent to Azure AI Foundry
+#
+# Triggers on push to main when agent prompt or deploy script changes.
+# Uses OIDC (no stored passwords) to authenticate with Azure.
+
+name: Deploy Prompt Agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'scripts/**'
+      - 'requirements.txt'
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write    # Required for Azure OIDC login
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # ── Stage 1: Validate (runs on every push & PR) ──────
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  # ── Stage 2: Deploy (only on push to main) ───────────
+  deploy:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production    # Requires manual approval in GitHub Settings
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy prompt agent
+        env:
+          FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+        run: |
+          python scripts/deploy_prompt_agent.py \
+            --agent-name "demo-prompt-agent" \
+            --model "${{ vars.MODEL_DEPLOYMENT_NAME }}" \
+            --prompt-file "agents/prompt.md" \
+            --version "${{ github.sha }}"
+
+      - name: Verify deployment
+        env:
+          FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+        run: python scripts/verify_deployment.py "demo-prompt-agent"
