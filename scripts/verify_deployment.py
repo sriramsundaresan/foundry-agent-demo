@@ -18,12 +18,18 @@ def verify(agent_name: str) -> None:
         credential=DefaultAzureCredential(),
     )
 
-    agent = client.agents.get_latest_version(agent_name)
+    agent = client.agents.get(agent_name=agent_name)
     print(f"Agent: {agent.name}")
-    print(f"Version: {agent.version}")
     print(f"ID: {agent.id}")
-    print(f"Model: {agent.definition.model}")
-    print("Status: DEPLOYED")
+
+    latest = agent.versions.get("latest", {})
+    model = latest.get("definition", {}).get("model", "unknown")
+    status = latest.get("status", "unknown")
+    version = latest.get("version", "unknown")
+
+    print(f"Version: {version}")
+    print(f"Model: {model}")
+    print(f"Status: {status}")
 
 
 if __name__ == "__main__":
